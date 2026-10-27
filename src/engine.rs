@@ -1,44 +1,224 @@
 use std::collections::{HashMap, VecDeque};
 
-#[derive(Debug)]
-pub enum Value {
-    Integer(i64),
-    String(String),
-    List(VecDeque<String>),
+use crate::errors::EngineError;
+use crate::errors::EngineError::WrongType;
+use crate::types::Value;
+
+pub trait Engine {
+    fn flush(&mut self) -> Result<(), EngineError>;
+
+    fn put(&mut self, key: String, value: Value) -> Result<Option<Value>, EngineError>;
+
+    fn l_push(&mut self, key: String, value: String) -> Result<(), EngineError>;
+
+    fn l_pop(&mut self, key: String) -> Result<Option<String>, EngineError>;
+
+    fn get(&self, key: &str) -> Result<Option<&Value>, EngineError>;
+
+    fn exist(&self, key: &str) -> bool;
+
+    fn del(&mut self, key: &str) -> Result<Option<Value>, EngineError>;
+
+    fn print(&self);
+
+    fn matcher_get(&self, matcher: &str) -> Vec<String>;
+
+    fn size(&self) -> usize;
 }
 
-pub struct DbEngine {
+#[derive(Default)]
+pub struct MemoryEngine {
     storage: HashMap<String, Value>,
 }
 
-pub enum DbEngineError {
-    WrongType,
+pub struct ReadOnlyEngine<E: Engine> {
+    engine: E,
 }
 
-impl DbEngine {
-    pub fn new() -> Self {
-        DbEngine { storage: HashMap::new() }
+impl <E: Engine> ReadOnlyEngine<E> {
+    pub fn new(inner: E) -> Self {
+        ReadOnlyEngine { engine: inner }
+    }
+}
+
+impl <E: Engine> Engine for ReadOnlyEngine<E> {
+    fn flush(&mut self) -> Result<(), EngineError> {
+        Err(WrongType)
     }
     
-    pub fn flush(&mut self) {
-        self.storage.clear();
+    fn put(&mut self, key: String, value: Value) -> Result<Option<Value>, EngineError> {
+        Err(WrongType)
     }
     
-    pub fn put(&mut self, key: String, value: Value) -> Option<Value> {
-        return self.storage.insert(key, value);
+    fn l_push(&mut self, key: String, value: String) -> Result<(), EngineError> {
+        Err(WrongType)
+    }
+    
+    fn l_pop(&mut self, key: String) -> Result<Option<String>, EngineError> {
+        Err(WrongType)
+    }
+    
+    fn get(&self, key: &str) -> Result<Option<&Value>, EngineError> {
+        Err(WrongType)
+    }
+    
+    fn exist(&self, key: &str) -> bool {
+        self.engine.exist(key)
+    }
+    
+    fn del(&mut self, key: &str) -> Result<Option<Value>, EngineError> {
+        Err(WrongType)
     }
 
-    pub fn l_push(&mut self, key: String, value: String) -> Result<(), DbEngineError> {
+    fn print(&self) {
+        self.engine.print()
+    }
+
+    fn matcher_get(&self, matcher: &str) -> Vec<String> {
+        self.engine.matcher_get(matcher)
+    }
+
+    fn size(&self) -> usize {
+        self.engine.size()
+    }
+}
+
+pub struct LoggingEngine<E: Engine> {
+    engine: E,
+}
+
+impl<E: Engine> LoggingEngine<E> {
+    pub(crate) fn new(inner: E) -> Self {
+        LoggingEngine { engine: inner }
+    }
+}
+
+impl<E: Engine> Engine for LoggingEngine<E> {
+
+    fn flush(&mut self) -> Result<(), EngineError> {
+        let result = self.engine.flush();
+        match &result {
+            Ok(_) => println!("[LOG] Flushed"),
+            Err(e) => println!("[LOG] Failed to flush."),
+        }
+        return result;
+    }
+
+    fn put(&mut self, key: String, value: Value) -> Result<Option<Value>, EngineError> {
+        let result = self.engine.put(key, value);
+        match &result {
+            Ok(option) => {
+                match &option {
+                    Some(old_val) => println!("[LOG] Inserted. Old value: {:?}", old_val),
+                    None => println!("[LOG] Inserted."),
+                }       
+            },
+            Err(e) => println!("[LOG] Failed to put."),
+        }
+        return result;
+    }
+
+    fn l_push(&mut self, key: String, value: String) -> Result<(), EngineError> {
+        let result = self.engine.l_push(key, value);
+        match &result {
+            Ok(..) => println!("[LOG] Pushed."),
+            Err(e) => println!("[LOG] Failed to push."),
+        }
+        return result;
+    }
+
+    fn l_pop(&mut self, key: String) -> Result<Option<String>, EngineError> {
+        let result = self.engine.l_pop(key);
+        match &result {
+            Ok(..) => println!("[LOG] Popped."),
+            Err(e) => println!("[LOG] Failed to pop."),
+        }
+        return result;
+    }
+
+    fn get(&self, key: &str) -> Result<Option<&Value>, EngineError> {
+        let result = self.engine.get(key);
+        match &result {
+            Ok(option) => {
+                match option {
+                    Some(value) => println!("[LOG] Found value: {:?}", value),
+                    None => println!("[LOG] No value"),
+                }       
+            }
+            Err(e) => println!("[LOG] Failed to get."),
+        }
+        return result;
+    }
+
+    fn exist(&self, key: &str) -> bool {
+        let result = self.engine.exist(key);
+        if result {
+            println!("[LOG] Key exists.");
+        }
+        else {
+            println!("[LOG] Key not found.");
+        }
+        return result;
+    }
+
+    fn del(&mut self, key: &str) -> Result<Option<Value>, EngineError> {
+        let result = self.engine.del(key);
+        match &result {
+            Ok(option) => {
+                match option {
+                    Some(old_val) => println!("[LOG] Deleted. Old value: {:?}", old_val),
+                    None => println!("[LOG] Deleted."),
+                }
+            }
+            Err(e) => println!("[LOG] Failed to delete."),
+        }
+        return result;
+    }
+
+    fn print(&self) {
+        println!("[LOG] Printing.");
+        self.engine.print();
+    }
+
+    fn matcher_get(&self, matcher: &str) -> Vec<String> {
+        let result = self.engine.matcher_get(matcher);
+        println!("[LOG] Match result: {:?}", result);
+        return result;
+    }
+
+    fn size(&self) -> usize {
+        let result = self.engine.size();
+        println!("[LOG] Size: {}", result);
+        return result;
+    }
+}
+
+impl MemoryEngine {
+    pub fn new() -> Self {
+        return MemoryEngine::default();
+    }
+}
+
+impl Engine for MemoryEngine {
+    fn flush(&mut self) -> Result<(), EngineError> {
+        return Ok(self.storage.clear());
+    }
+    
+    fn put(&mut self, key: String, value: Value) -> Result<Option<Value>, EngineError> {
+        return Ok(self.storage.insert(key, value));
+    }
+
+    fn l_push(&mut self, key: String, value: String) -> Result<(), EngineError> {
         let entry = self.storage.entry(key).or_insert_with(|| Value::List(VecDeque::new()));
         if let Value::List(list) = entry {
             list.push_front(value);
             Ok(())
         } else {
-            Err(DbEngineError::WrongType)
+            Err(EngineError::WrongType)
         }
     }
 
-    pub fn l_pop(&mut self, key: String) -> Result<Option<String>, DbEngineError> {
+    fn l_pop(&mut self, key: String) -> Result<Option<String>, EngineError> {
         match self.storage.get_mut(&key) {
             None => Ok(None),
             Some(Value::List(list)) => {
@@ -49,30 +229,30 @@ impl DbEngine {
                 Ok(value)
             }
             _ => {
-                Err(DbEngineError::WrongType)
+                Err(EngineError::WrongType)
             }
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<&Value> {
-        return self.storage.get(key);
+    fn get(&self, key: &str) -> Result<Option<&Value>, EngineError> {
+        return Ok(self.storage.get(key));
     }
 
-    pub fn exist(&self, key: &str) -> bool {
+    fn exist(&self, key: &str) -> bool {
         return self.storage.contains_key(key);
     }
 
-    pub fn del(&mut self, key: &str) -> Option<Value> {
-        return self.storage.remove(key);
+    fn del(&mut self, key: &str) -> Result<Option<Value>, EngineError> {
+        return Ok(self.storage.remove(key));
     }
 
-    pub fn print(&self) {
+    fn print(&self) {
         for key in self.storage.keys() {
             println!("{} -> {:?}", key, self.storage.get(key));
         }
     }
     
-    pub fn matcher_get(&self, matcher: &str) -> Vec<String> {
+    fn matcher_get(&self, matcher: &str) -> Vec<String> {
         if matcher.eq("*") {
             return self.storage.keys().cloned().collect();
         }
@@ -111,7 +291,7 @@ impl DbEngine {
         return vec;
     }
 
-    pub fn size(&self) -> usize {
+    fn size(&self) -> usize {
         return self.storage.len();
     }
 }

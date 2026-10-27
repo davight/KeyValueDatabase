@@ -1,14 +1,16 @@
 pub mod engine;
 pub mod command;
+pub mod errors;
+pub mod types;
 
 use std::io;
-use crate::engine::*;
-use crate::command::*;
+use engine::{Engine, MemoryEngine};
+use command::Command;
+use crate::engine::LoggingEngine;
 
-fn main() {
+fn run_main_loop(engine: &mut dyn Engine) {
     println!("--- Kvdb ---\nEnter input:");
     let mut input = String::new();
-    let mut engine = DbEngine::new();
     let prefix = "+>";
     loop {
         input.clear();
@@ -30,21 +32,21 @@ fn main() {
         };
         match command {
             Command::Get(key) => {
-                match engine.get(&key) {
+                match engine.get(&key).ok() {
                     Some(val) => println!("{prefix} {:?}", val),
                     None => println!("{prefix} Key '{key}' not found"),
                 }
             }
             Command::MGet(keys) => {
                 for key in keys {
-                    match engine.get(&key) {
+                    match engine.get(&key).ok() {
                         Some(val) => println!("{prefix} {:?}", val),
                         None => println!("{prefix} Key '{key}' not found"),
                     }
                 }
             }
             Command::Put(key, value) => {
-                match engine.put(key, value) {
+                match engine.put(key, value).ok() {
                     Some(old_val) => println!("{prefix} Inserted. The old value was: '{old_val:?}'"),
                     None => println!("{prefix} Inserted"),
                 }
@@ -53,7 +55,7 @@ fn main() {
                 println!("{prefix} {}", engine.exist(&key));
             }
             Command::Del(key) => {
-                match engine.del(&key) {
+                match engine.del(&key).ok() {
                     Some(old_val) => println!("{prefix} Deleted. The old value was: '{old_val:?}'"),
                     None => println!("{prefix} Key '{key}' not found."),
                 }
@@ -103,6 +105,16 @@ fn main() {
                 println!("{prefix} Unknown command: '{}'", args);
             }
         }
-
     }
 }
+
+fn main() {
+    let use_log = true;
+    let mut engine: Box<dyn Engine> = if (use_log) {
+        Box::new(LoggingEngine::new(MemoryEngine::new()))
+    } else {
+        Box::new(MemoryEngine::default())
+    };
+    run_main_loop(engine.as_mut());
+}
+
