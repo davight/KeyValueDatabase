@@ -1,14 +1,19 @@
 pub mod engine;
+pub mod log_engine;
+pub mod memory_engine;
+pub mod read_only_engine;
+pub mod file_engine;
 pub mod command;
 pub mod errors;
 pub mod types;
 
-use std::io;
-use engine::{Engine, MemoryEngine};
+use file_engine::FileEngine;
 use command::Command;
-use crate::engine::LoggingEngine;
+use engine::Engine;
+use memory_engine::MemoryEngine;
+use std::io;
 
-fn run_main_loop(engine: &mut dyn Engine) {
+fn run_main_loop(mut engine: impl Engine) {
     println!("--- Kvdb ---\nEnter input:");
     let mut input = String::new();
     let prefix = "+>";
@@ -94,8 +99,10 @@ fn run_main_loop(engine: &mut dyn Engine) {
                 break;
             }
             Command::DbFlush() => {
-                engine.flush();
-                println!("{prefix} Database flushed.");
+                match engine.flush() {
+                    Ok(_) => println!("{prefix} Database flushed."),
+                    Err(_) => println!("{prefix} Could not flush the database.")
+                }
             }
             Command::DbSize() => {
                 let size = engine.size();
@@ -109,12 +116,22 @@ fn run_main_loop(engine: &mut dyn Engine) {
 }
 
 fn main() {
+    let path = std::env::args().nth(1).unwrap_or_else(|| "kvdb.aof".to_string());
+    let file_engine = FileEngine::open(path, MemoryEngine::new());
+    match file_engine {
+        Ok(engine) => {
+            run_main_loop(engine);
+        }
+        _ => {}
+    }
+    /*
     let use_log = true;
-    let mut engine: Box<dyn Engine> = if (use_log) {
+    let mut engine: Box<dyn Engine> = if use_log {
         Box::new(LoggingEngine::new(MemoryEngine::new()))
     } else {
         Box::new(MemoryEngine::default())
     };
     run_main_loop(engine.as_mut());
+     */
 }
 
